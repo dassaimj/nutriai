@@ -111,7 +111,145 @@ async function aiText(prompt) {
   } catch { return "Erro ao conectar com a IA. Verifique sua chave de API."; }
 }
 
-async function gerarCardapio(perfil) {
+async function gerarCardapioSemanal(perfil: any) {
+  return await aiJSON(`Você é nutricionista. Crie cardápio para 7 dias (Segunda a Domingo) com ${perfil.nRefeicoes||5} refeições/dia para:
+- Dieta: ${perfil.dieta}
+- Restrições: ${(perfil.restricoes||[]).join(", ")||"nenhuma"}
+- Meta calórica: ${perfil.calAlvo} kcal/dia
+- Sexo: ${perfil.sexo}, Peso: ${perfil.peso}kg
+- Jejum: ${perfil.jejum||"não"}
+JSON: {"dias":[{"dia":"string","refeicoes":[{"nome":"string","horario":"HH:MM","descricao":"string","kcal":number}]}],"lista_compras":{"proteinas":["item com quantidade"],"graos_cereais":["item"],"hortifruti":["item"],"laticinios":["item"],"outros":["item"]}}`);
+}
+
+function gerarPDFSemanal(perfil: any, dados: any) {
+  const { jsPDF } = (window as any).jspdf;
+  const doc = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4" });
+  const W=210, margin=16; let y=20;
+  const G=[16,185,129] as [number,number,number];
+  const T=[30,30,30] as [number,number,number];
+  const M=[120,120,120] as [number,number,number];
+  const F=[245,250,247] as [number,number,number];
+
+  doc.setFillColor(...G); doc.rect(0,0,W,28,"F");
+  doc.setTextColor(255,255,255);
+  doc.setFontSize(18); doc.setFont("helvetica","bold");
+  doc.text("NutriAI - Cardapio Semanal", margin, 13);
+  doc.setFontSize(9); doc.setFont("helvetica","normal");
+  doc.text(`${perfil.nome||"Usuario"} · ${perfil.dieta} · Meta: ${perfil.calAlvo} kcal/dia`, margin, 22);
+  y=36;
+
+  dados.dias?.forEach((d: any)=>{
+    if(y>250){doc.addPage();y=20;}
+    doc.setFillColor(...G); doc.roundedRect(margin,y,W-margin*2,8,2,2,"F");
+    doc.setTextColor(255,255,255); doc.setFontSize(10); doc.setFont("helvetica","bold");
+    doc.text(d.dia.toUpperCase(), margin+4, y+5.5); y+=11;
+    d.refeicoes?.forEach((r: any)=>{
+      if(y>272){doc.addPage();y=20;}
+      doc.setFillColor(...F); doc.roundedRect(margin,y,W-margin*2,10,1.5,1.5,"F");
+      doc.setTextColor(...T); doc.setFontSize(9); doc.setFont("helvetica","bold");
+      doc.text(`${r.horario}  ${r.nome}`, margin+3, y+4.5);
+      doc.setFont("helvetica","normal"); doc.setTextColor(...M); doc.setFontSize(7.5);
+      doc.text((r.descricao||"").substring(0,70), margin+3, y+8);
+      doc.setTextColor(...G); doc.setFont("helvetica","bold"); doc.setFontSize(8);
+      doc.text(`${r.kcal} kcal`, W-margin-18, y+4.5); y+=12;
+    }); y+=4;
+  });
+
+  doc.addPage(); y=20;
+  doc.setFillColor(...G); doc.rect(0,0,W,18,"F");
+  doc.setTextColor(255,255,255); doc.setFontSize(16); doc.setFont("helvetica","bold");
+  doc.text("Lista de Compras - 7 dias", margin, 13); y=28;
+
+  const cats: any = {proteinas:"Proteinas",graos_cereais:"Graos e Cereais",hortifruti:"Hortifruti",laticinios:"Laticinios",outros:"Outros"};
+  Object.entries(cats).forEach(([key,titulo]: any)=>{
+    const itens=dados.lista_compras?.[key]||[];
+    if(!itens.length) return;
+    if(y>250){doc.addPage();y=20;}
+    doc.setFillColor(...G); doc.roundedRect(margin,y,W-margin*2,8,2,2,"F");
+    doc.setTextColor(255,255,255); doc.setFontSize(10); doc.setFont("helvetica","bold");
+    doc.text(titulo, margin+4, y+5.5); y+=11;
+    itens.forEach((item: string)=>{
+      if(y>272){doc.addPage();y=20;}
+      doc.setFillColor(...F); doc.roundedRect(margin,y,W-margin*2,7,1.5,1.5,"F");
+      doc.setDrawColor(...G); doc.setLineWidth(0.4);
+      doc.roundedRect(margin+3,y+1.5,4,4,0.8,0.8);
+      doc.setTextColor(...T); doc.setFontSize(8); doc.setFont("helvetica","normal");
+      doc.text(item, margin+10, y+4.8); y+=8.5;
+    }); y+=3;
+  });
+
+  const pages=doc.getNumberOfPages();
+  for(let i=1;i<=pages;i++){
+    doc.setPage(i); doc.setFontSize(7); doc.setTextColor(...M);
+    doc.text(`NutriAI · ${new Date().toLocaleDateString("pt-BR")} · Pag ${i}/${pages}`, margin, 292);
+  }
+  doc.save(`NutriAI_Semanal_${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}.pdf`);
+}
+
+function gerarPDFListaDiaria(perfil: any, cardapio: any[]) {
+  const { jsPDF } = (window as any).jspdf;
+  const doc = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4" });
+  const W=210, margin=16; let y=20;
+  const G=[16,185,129] as [number,number,number];
+  const T=[30,30,30] as [number,number,number];
+  const M=[120,120,120] as [number,number,number];
+  const F=[245,250,247] as [number,number,number];
+
+  const hoje=new Date();
+  const dias=["Domingo","Segunda","Terca","Quarta","Quinta","Sexta","Sabado"];
+
+  doc.setFillColor(...G); doc.rect(0,0,W,28,"F");
+  doc.setTextColor(255,255,255); doc.setFontSize(18); doc.setFont("helvetica","bold");
+  doc.text("NutriAI - Lista de Compras", margin, 13);
+  doc.setFontSize(9); doc.setFont("helvetica","normal");
+  doc.text(`${perfil.nome||"Usuario"} · ${dias[hoje.getDay()]}, ${hoje.toLocaleDateString("pt-BR")}`, margin, 22);
+  y=36;
+
+  doc.setFillColor(...G); doc.roundedRect(margin,y,W-margin*2,8,2,2,"F");
+  doc.setTextColor(255,255,255); doc.setFontSize(10); doc.setFont("helvetica","bold");
+  doc.text("CARDAPIO DE HOJE", margin+4, y+5.5); y+=11;
+
+  let total=0;
+  cardapio.forEach((r: any)=>{
+    doc.setFillColor(...F); doc.roundedRect(margin,y,W-margin*2,14,1.5,1.5,"F");
+    doc.setTextColor(...T); doc.setFontSize(9); doc.setFont("helvetica","bold");
+    doc.text(`${r.horario} - ${r.nome}`, margin+3, y+5);
+    doc.setFont("helvetica","normal"); doc.setTextColor(...M); doc.setFontSize(7.5);
+    doc.text((r.itens?.join(" · ")||"").substring(0,75), margin+3, y+10);
+    doc.setTextColor(...G); doc.setFont("helvetica","bold"); doc.setFontSize(8);
+    doc.text(`${r.kcal} kcal`, W-margin-18, y+5);
+    total+=r.kcal; y+=16;
+  });
+
+  doc.setFillColor(...G); doc.roundedRect(margin,y,W-margin*2,9,2,2,"F");
+  doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont("helvetica","bold");
+  doc.text(`Total: ${total} kcal  |  Meta: ${perfil.calAlvo} kcal`, margin+4, y+6); y+=16;
+
+  doc.setFillColor(...G); doc.roundedRect(margin,y,W-margin*2,8,2,2,"F");
+  doc.setTextColor(255,255,255); doc.setFontSize(10); doc.setFont("helvetica","bold");
+  doc.text("INGREDIENTES NECESSARIOS", margin+4, y+5.5); y+=11;
+
+  cardapio.forEach((r: any)=>{
+    if(!r.itens?.length) return;
+    if(y>265){doc.addPage();y=20;}
+    doc.setTextColor(...T); doc.setFontSize(8); doc.setFont("helvetica","bold");
+    doc.text(`${r.nome}:`, margin+3, y+4); y+=6;
+    r.itens.forEach((item: string)=>{
+      if(y>272){doc.addPage();y=20;}
+      doc.setFillColor(...F); doc.roundedRect(margin,y,W-margin*2,7,1.5,1.5,"F");
+      doc.setDrawColor(...G); doc.setLineWidth(0.4);
+      doc.roundedRect(margin+3,y+1.5,4,4,0.8,0.8);
+      doc.setTextColor(...T); doc.setFont("helvetica","normal"); doc.setFontSize(8);
+      doc.text(item, margin+10, y+4.8); y+=8.5;
+    }); y+=3;
+  });
+
+  doc.setFontSize(7); doc.setTextColor(...M);
+  doc.text(`NutriAI · ${new Date().toLocaleDateString("pt-BR")}`, margin, 292);
+  doc.save(`NutriAI_Lista_${new Date().toLocaleDateString("pt-BR").replace(/\//g,"-")}.pdf`);
+}
+
+async function gerarCardapio(perfil: any) {
   const atvsCtx = (perfil.atividadesFreq||[]).length > 0
     ? `Atividades habituais: ${perfil.atividadesFreq.map(a=>`${a.nome}`).join(", ")}`
     : "";
@@ -133,16 +271,26 @@ Retorne JSON: {"kcal":number,"prot":number,"carb":number,"gord":number,"confianc
 }
 
 async function analisarDia(perfil, dia) {
-  const atvsCtx = (perfil.atividadesFreq||[]).length > 0
-    ? `\nAtividades habituais: ${perfil.atividadesFreq.map(a=>a.nome).join(", ")}`
-    : "";
-  return await aiText(`Analise o dia nutricional (máx 3 parágrafos curtos, direto e motivador):
-- Meta: ${perfil.calAlvo} kcal | TMB: ${perfil.tmb} kcal | GET: ${perfil.get} kcal
-- Ingerido: ${dia.calIn} kcal | Exercício: ${dia.calEx} kcal
-- Déficit real: ${(perfil.get + dia.calEx) - dia.calIn} kcal
-- Água: ${dia.agua}ml | Refeições cumpridas: ${dia.check}/${dia.total}
-- Dieta: ${perfil.dieta}${atvsCtx}
-Dê 1 elogio e 1 sugestão prática.`);
+  const aguaMeta = Math.round(parseFloat(perfil.peso) * 35);
+  const aguaOk = dia.agua >= aguaMeta * 0.85;
+  const protMeta = Math.round(parseFloat(perfil.peso) * 1.8);
+  const exercitou = dia.calEx > 0;
+  return await aiText(`Você é um coach nutricional. Escreva uma mensagem de feedback do dia para ${perfil.nome||"o usuário"}.
+
+Dados do dia:
+- Calorias: ${dia.calIn} kcal ingeridas (meta: ${perfil.calAlvo} kcal)
+- Água: ${dia.agua}ml (meta: ${aguaMeta}ml para ${perfil.peso}kg)
+- Exercício: ${exercitou?`${dia.calEx} kcal gastas`:"nenhum registrado"}
+- Refeições: ${dia.check}/${dia.total} cumpridas
+- Déficit: ${(perfil.get+dia.calEx)-dia.calIn} kcal
+
+Regras OBRIGATÓRIAS:
+- Máximo 4 frases curtas, sem títulos, sem bullets, sem markdown
+- Comece com 1 frase de elogio ou encorajamento
+- Mencione água apenas se ${!aguaOk} (consumo abaixo do ideal)
+- Mencione exercício apenas se ${!exercitou} (não registrou atividade)
+- Termine com 1 frase motivadora curta
+- Tom: direto, caloroso, como um coach pessoal`);
 }
 
 function cardapioPadrao(p) {
@@ -285,8 +433,8 @@ function StepObjetivo({ f, u, tmb, get, sexo }: any) {
   const [confirmarRisco, setConfirmarRisco] = useState(false);
   const diff = parseFloat(f.peso||0) - parseFloat(f.pesoMeta||0);
   const semanas = parseFloat(f.prazo||1);
-  const deficitIdeal = diff > 0 ? Math.round((diff*7700)/(semanas*7)) : 0;
-  const calAlvoCalc = get - deficitIdeal;
+  const deficitIdeal = diff > 0 ? Math.round((diff*7700)/(semanas*7)) : diff < 0 ? Math.round((diff*7700)/(semanas*7)) : 0;
+  const calAlvoCalc = get - deficitIdeal; // negativo = superávit (ganho)
   const calAlvo = f.calAlvoCustom !== undefined ? f.calAlvoCustom : calAlvoCalc;
   const minSeguro = MIN_SEGURO[sexo as keyof typeof MIN_SEGURO] || 1500;
   const minAbsoluto = Math.round(tmb * MIN_ABSOLUTO_PCT);
@@ -316,8 +464,8 @@ function StepObjetivo({ f, u, tmb, get, sexo }: any) {
       }}>
         <div style={{fontSize:11,color:C.muted,marginBottom:12}}>Projeção calculada</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
-          <Stat label="A perder" val={`${Math.max(0,diff).toFixed(1)} kg`} color={C.accent}/>
-          <Stat label="Por semana" val={`${diff>0?(diff/semanas).toFixed(2):"0"} kg`} color={diff>0&&(diff/semanas)>1.5?C.orange:C.yellow}/>
+          <Stat label={diff>0?"A perder":"A ganhar"} val={`${Math.abs(diff).toFixed(1)} kg`} color={C.accent}/>
+          <Stat label="Por semana" val={`${diff!==0?(Math.abs(diff)/semanas).toFixed(2):"0"} kg`} color={diff>0&&(diff/semanas)>1.5?C.orange:C.yellow}/>
           <Stat label="Alvo diário" val={`${calAlvo} kcal`}
             color={seg.nivel==="ok"?C.accent:seg.nivel==="aviso"?C.yellow:seg.nivel==="alerta"?C.orange:C.red}/>
         </div>
@@ -655,7 +803,7 @@ function CardRefeicao({ r, checked, onCheck, extra, onSaveExtra, peso }: any) {
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
-function Dashboard({ perfil, onEdit }: any) {
+function Dashboard({ perfil, onEdit, onGerarListaDiaria }: any) {
   const [cardapio, setCardapio] = useState<any[]|null>(null);
   const [loading, setLoading] = useState(false);
   const [checked, setChecked] = useState<any>({});
@@ -877,6 +1025,12 @@ function Dashboard({ perfil, onEdit }: any) {
         </div>
       </div>}
 
+      {/* Botão lista de compras do dia */}
+      {cardapio && <button onClick={()=>onGerarListaDiaria(cardapio)}
+        style={{...btn("outline"),width:"100%",padding:14,fontSize:14,marginTop:8,marginBottom:8}}>
+        🛒 Lista de Compras do Dia (PDF)
+      </button>}
+
       {/* Botão salvar o dia */}
       <button onClick={()=>setShowConfirmFechar(true)}
         style={{...btn(),width:"100%",padding:16,fontSize:15,marginTop:8,
@@ -1079,17 +1233,24 @@ function Dashboard({ perfil, onEdit }: any) {
 // ── ROOT ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [perfil, setPerfil] = useState<any>(null);
+  const [telaSemanal, setTelaSemanal] = useState(false);
+  const [loadingSemanal, setLoadingSemanal] = useState(false);
 
-  // Recuperar perfil salvo
   useEffect(()=>{
     const saved = localStorage.getItem("nutriai_perfil");
     if(saved) setPerfil(JSON.parse(saved));
   },[]);
-
-  // Salvar perfil
   useEffect(()=>{
     if(perfil) localStorage.setItem("nutriai_perfil", JSON.stringify(perfil));
   },[perfil]);
+
+  async function handleGerarSemanal() {
+    if(!perfil) return;
+    setLoadingSemanal(true); setTelaSemanal(true);
+    const dados = await gerarCardapioSemanal(perfil);
+    if(dados) gerarPDFSemanal(perfil, dados);
+    setLoadingSemanal(false); setTelaSemanal(false);
+  }
 
   return <div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:"'DM Sans','Segoe UI',system-ui,sans-serif"}}>
     <div style={{background:"linear-gradient(180deg,#0d1f14 0%,transparent 100%)",borderBottom:`1px solid ${C.border}`,padding:"14px 20px",maxWidth:560,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -1097,8 +1258,27 @@ export default function App() {
         <span style={{fontSize:20}}>🥗</span>
         <span style={{fontSize:16,fontWeight:800,color:C.accent,letterSpacing:-0.5}}>NutriAI</span>
       </div>
-      {perfil && <button onClick={()=>{setPerfil(null);localStorage.removeItem("nutriai_perfil");}} style={{...btn("ghost"),padding:"5px 12px",fontSize:11}}>✎ Perfil</button>}
+      {perfil && <div style={{display:"flex",gap:8}}>
+        <button onClick={handleGerarSemanal} disabled={loadingSemanal} style={{...btn(),padding:"5px 12px",fontSize:11}}>
+          {loadingSemanal?"⏳ Gerando...":"📅 Cardápio Semanal"}
+        </button>
+        <button onClick={()=>{setPerfil(null);localStorage.removeItem("nutriai_perfil");}} style={{...btn("ghost"),padding:"5px 12px",fontSize:11}}>✎</button>
+      </div>}
     </div>
+
+    {/* Overlay gerando semanal */}
+    {telaSemanal && <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:500,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
+      <div style={{fontSize:48}}>📅</div>
+      <div style={{fontSize:18,fontWeight:700,color:C.text}}>Gerando cardápio semanal...</div>
+      <div style={{fontSize:13,color:C.muted,textAlign:"center",maxWidth:280,lineHeight:1.6}}>
+        A IA está criando 7 dias de refeições e montando a lista de compras. O PDF será baixado automaticamente.
+      </div>
+      <div style={{display:"flex",gap:6,marginTop:8}}>
+        {[0,1,2].map(i=><div key={i} style={{width:8,height:8,borderRadius:"50%",background:C.accent,
+          animation:`pulse 1.4s ease-in-out ${i*0.2}s infinite`}}/>)}
+      </div>
+    </div>}
+
     {!perfil
       ? <Briefing onDone={(p: any)=>{
           const tmb=calcTMB(p); const get=calcGET(tmb,p.atv);
@@ -1107,7 +1287,8 @@ export default function App() {
           const calAlvo=p.calAlvoCustom!==undefined?p.calAlvoCustom:get-deficitIdeal;
           setPerfil({...p,tmb,get,calAlvo,deficitIdeal});
         }}/>
-      : <Dashboard perfil={perfil} onEdit={()=>{setPerfil(null);localStorage.removeItem("nutriai_perfil");}}/>
+      : <Dashboard perfil={perfil} onEdit={()=>{setPerfil(null);localStorage.removeItem("nutriai_perfil");}}
+          onGerarListaDiaria={(cardapio: any[])=>gerarPDFListaDiaria(perfil,cardapio)}/>
     }
   </div>;
 }
