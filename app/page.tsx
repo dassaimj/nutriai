@@ -668,6 +668,8 @@ function Dashboard({ perfil, onEdit }: any) {
   const [aba, setAba] = useState("hoje");
   const [pesoAtual, setPesoAtual] = useState(perfil.peso);
   const [editPeso, setEditPeso] = useState(false);
+  const [showConfirmFechar, setShowConfirmFechar] = useState(false);
+  const [telaresumo, setTelaResumo] = useState<any>(null);
 
   const hist = [
     {d:"Seg",in:1820,def:680},{d:"Ter",in:1950,def:550},{d:"Qua",in:1760,def:740},
@@ -875,15 +877,128 @@ function Dashboard({ perfil, onEdit }: any) {
         </div>
       </div>}
 
-      {/* Análise IA */}
-      <button onClick={async()=>{
-        setLoadingAnalise(true);
-        const t = await analisarDia(perfil,{calIn,calEx,agua,check:Object.values(checked).filter(Boolean).length,total:cardapio?.length||5});
-        setAnalise(t); setLoadingAnalise(false);
-      }} disabled={loadingAnalise} style={{...btn(),width:"100%",padding:14,marginBottom:analise?12:0}}>
-        {loadingAnalise?"✨ Analisando...":"🤖 Analisar meu dia com IA"}
+      {/* Botão salvar o dia */}
+      <button onClick={()=>setShowConfirmFechar(true)}
+        style={{...btn(),width:"100%",padding:16,fontSize:15,marginTop:8,
+          background:"linear-gradient(135deg,#7c3aed,#4f46e5)"}}>
+        ✅ Salvar o dia
       </button>
-      {analise && <div style={{background:"rgba(16,185,129,0.06)",border:`1px solid rgba(16,185,129,0.2)`,borderRadius:12,padding:16,fontSize:13,color:C.text,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{analise}</div>}
+
+      {/* Popup de confirmação */}
+      {showConfirmFechar && <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+        <div style={{background:"#111827",borderRadius:20,padding:28,width:"100%",maxWidth:420,border:`1px solid ${C.border}`}}>
+          <div style={{fontSize:32,textAlign:"center",marginBottom:16}}>⚠️</div>
+          <h3 style={{color:C.text,fontSize:18,fontWeight:700,textAlign:"center",margin:"0 0 12px"}}>Fechar o dia?</h3>
+          <p style={{color:C.muted,fontSize:13,lineHeight:1.7,textAlign:"center",marginBottom:24}}>
+            Após fechar o dia <strong style={{color:C.yellow}}>não será possível editar</strong> as refeições, exercícios ou água registrados. O resumo ficará salvo no histórico.
+          </p>
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={()=>setShowConfirmFechar(false)} style={{...btn("ghost"),flex:1}}>Cancelar</button>
+            <button onClick={async()=>{
+              setShowConfirmFechar(false);
+              setLoadingAnalise(true);
+              const hoje = new Date();
+              const diasSemana = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
+              const txt = await analisarDia(perfil,{calIn,calEx,agua,check:Object.values(checked).filter(Boolean).length,total:cardapio?.length||5});
+              const resumo = {
+                data: hoje.toLocaleDateString("pt-BR"),
+                diaSemana: diasSemana[hoje.getDay()],
+                hora: hoje.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
+                calIn, calEx, agua,
+                deficit,
+                refeicoesCumpridas: Object.values(checked).filter(Boolean).length,
+                totalRefeicoes: cardapio?.length||5,
+                macros: totalMacros,
+                analise: txt,
+              };
+              // Salvar no histórico
+              const hist = JSON.parse(localStorage.getItem("nutriai_historico")||"[]");
+              hist.unshift(resumo);
+              localStorage.setItem("nutriai_historico", JSON.stringify(hist.slice(0,30)));
+              setTelaResumo(resumo);
+              setLoadingAnalise(false);
+            }} style={{...btn(),flex:2,background:"linear-gradient(135deg,#7c3aed,#4f46e5)"}}>
+              {loadingAnalise?"⏳ Analisando...":"Sim, fechar o dia"}
+            </button>
+          </div>
+        </div>
+      </div>}
+
+      {/* Tela de resumo do dia */}
+      {telaresumo && <div style={{position:"fixed",inset:0,background:C.bg,zIndex:400,overflowY:"auto"}}>
+        <div style={{maxWidth:560,margin:"0 auto",padding:"32px 20px 80px"}}>
+          {/* Header */}
+          <div style={{textAlign:"center",marginBottom:32}}>
+            <div style={{fontSize:52,marginBottom:12}}>
+              {telaresumo.deficit>0?"🎉":"💪"}
+            </div>
+            <div style={{fontSize:12,color:C.muted,letterSpacing:3,textTransform:"uppercase" as const,marginBottom:6}}>
+              {telaresumo.diaSemana} · {telaresumo.data} · {telaresumo.hora}
+            </div>
+            <h2 style={{fontSize:26,fontWeight:700,color:C.text,margin:"0 0 6px"}}>
+              {telaresumo.deficit>0?"Dia em déficit! 🔥":"Continue firme! 💚"}
+            </h2>
+            <div style={{fontSize:14,color:C.muted}}>Resumo do seu dia</div>
+          </div>
+
+          {/* Cards de números */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
+            {[
+              {label:"Calorias ingeridas",val:`${telaresumo.calIn} kcal`,cor:C.yellow,icon:"🍽"},
+              {label:"Queimado exercício",val:`${telaresumo.calEx} kcal`,cor:C.accent,icon:"🏃"},
+              {label:"Água consumida",val:`${telaresumo.agua} ml`,cor:"#60a5fa",icon:"💧"},
+              {label:"Refeições cumpridas",val:`${telaresumo.refeicoesCumpridas}/${telaresumo.totalRefeicoes}`,cor:C.accent,icon:"✅"},
+            ].map(c=><div key={c.label} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,textAlign:"center"}}>
+              <div style={{fontSize:24,marginBottom:6}}>{c.icon}</div>
+              <div style={{fontSize:18,fontWeight:700,color:c.cor,marginBottom:4}}>{c.val}</div>
+              <div style={{fontSize:11,color:C.muted}}>{c.label}</div>
+            </div>)}
+          </div>
+
+          {/* Déficit */}
+          <div style={{background:telaresumo.deficit>0?"rgba(16,185,129,0.08)":"rgba(239,68,68,0.08)",
+            border:`1px solid ${telaresumo.deficit>0?"rgba(16,185,129,0.25)":"rgba(239,68,68,0.25)"}`,
+            borderRadius:12,padding:20,textAlign:"center",marginBottom:20}}>
+            <div style={{fontSize:12,color:C.muted,letterSpacing:2,textTransform:"uppercase" as const,marginBottom:6}}>
+              {telaresumo.deficit>0?"Déficit do dia":"Saldo positivo"}
+            </div>
+            <div style={{fontSize:40,fontWeight:800,color:telaresumo.deficit>0?C.accent:C.red}}>
+              {telaresumo.deficit>0?"-":"+"}
+              {Math.abs(telaresumo.deficit)} kcal
+            </div>
+          </div>
+
+          {/* Macros */}
+          <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:16,marginBottom:20}}>
+            <div style={{fontSize:11,color:C.muted,letterSpacing:2,textTransform:"uppercase" as const,marginBottom:12}}>Macros do dia</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+              {[["Proteína",telaresumo.macros.prot,"#60a5fa"],["Carboidrato",telaresumo.macros.carb,C.yellow],["Gordura",telaresumo.macros.gord,"#f472b6"]].map(([lb,v,cor])=>(
+                <div key={lb as string} style={{textAlign:"center"}}>
+                  <div style={{fontSize:20,fontWeight:700,color:cor as string}}>{v as number}g</div>
+                  <div style={{fontSize:10,color:C.muted}}>{lb}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Análise IA */}
+          <div style={{background:"rgba(16,185,129,0.06)",border:`1px solid rgba(16,185,129,0.2)`,borderRadius:12,padding:20,marginBottom:32}}>
+            <div style={{fontSize:11,color:C.accent,letterSpacing:2,textTransform:"uppercase" as const,marginBottom:12}}>🤖 Análise do dia</div>
+            <div style={{fontSize:14,color:C.text,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{telaresumo.analise}</div>
+          </div>
+
+          {/* Botão iniciar novo dia */}
+          <button onClick={()=>{
+            const hoje = new Date().toISOString().slice(0,10);
+            localStorage.removeItem(`nutriai_dia_${hoje}`);
+            setChecked({}); setExtras({}); setAgua(0); setExercicios([]);
+            setAnalise(""); setTelaResumo(null); setAba("hoje");
+            carregarCardapio();
+          }} style={{...btn(),width:"100%",padding:16,fontSize:15}}>
+            🌅 Iniciar novo dia
+          </button>
+        </div>
+      </div>}
     </>}
 
     {/* ── CALORIAS ── */}
