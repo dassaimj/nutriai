@@ -115,7 +115,7 @@ async function gerarCardapio(perfil) {
   const atvsCtx = (perfil.atividadesFreq||[]).length > 0
     ? `Atividades habituais: ${perfil.atividadesFreq.map(a=>`${a.nome}`).join(", ")}`
     : "";
-  const res = await aiJSON(`Você é nutricionista. Crie cardápio de 1 dia com 5 refeições para:
+  const res = await aiJSON(`Você é nutricionista. Crie cardápio de 1 dia com ${perfil.nRefeicoes||5} refeições para:
 - Dieta: ${perfil.dieta}
 - Restrições: ${(perfil.restricoes||[]).join(", ")||"nenhuma"}
 - Meta calórica: ${perfil.calAlvo} kcal
@@ -369,6 +369,7 @@ function Briefing({ onDone }: any) {
     nome:"", sexo:"Masculino", idade:"", peso:"", altura:"",
     atv:"Leve", dieta:"", restricoes:[] as string[], jejum:"",
     pesoMeta:"", prazo:8, atividadesFreq:[] as any[], calAlvoCustom:undefined as any,
+    nRefeicoes:5, diaPesagem:"Segunda-feira",
   });
   const u = (k: string, v: any) => setF(p=>({...p,[k]:v}));
   const tog = (k: string, v: string) => setF(p=>({...p,[k]:(p as any)[k].includes(v)?(p as any)[k].filter((x: string)=>x!==v):[...(p as any)[k].filter((x: string)=>x!=="Nenhuma"),v]}));
@@ -457,8 +458,57 @@ function Briefing({ onDone }: any) {
       </div>
     </div>,
 
-    // 4 — objetivo
-    <StepObjetivo key={4} f={f} u={u} tmb={tmb} get={get} sexo={f.sexo}/>,
+    // 4 — preferências
+    <div key={4}>
+      <div style={{fontSize:12,letterSpacing:4,color:C.accent,textTransform:"uppercase" as const,marginBottom:18}}>Preferências do plano</div>
+
+      {/* Número de refeições */}
+      <div style={{marginBottom:20}}>
+        <div style={{fontSize:11,color:C.muted,marginBottom:6}}>Quantas refeições por dia?</div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>u("nRefeicoes",Math.max(2,f.nRefeicoes-1))} style={{
+            width:36,height:36,borderRadius:8,border:`1px solid ${C.border}`,background:"rgba(255,255,255,0.05)",
+            color:C.text,fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+          }}>−</button>
+          <div style={{flex:1,textAlign:"center"}}>
+            <div style={{fontSize:32,fontWeight:700,color:C.accent}}>{f.nRefeicoes}</div>
+            <div style={{fontSize:11,color:C.muted}}>refeições/dia</div>
+          </div>
+          <button onClick={()=>u("nRefeicoes",Math.min(8,f.nRefeicoes+1))} style={{
+            width:36,height:36,borderRadius:8,border:`1px solid ${C.border}`,background:"rgba(255,255,255,0.05)",
+            color:C.text,fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+          }}>+</button>
+        </div>
+        <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
+          {[3,4,5,6].map(n=><button key={n} onClick={()=>u("nRefeicoes",n)} style={{
+            padding:"5px 14px",borderRadius:16,fontSize:12,cursor:"pointer",fontFamily:"inherit",
+            background:f.nRefeicoes===n?"rgba(16,185,129,0.15)":"rgba(255,255,255,0.04)",
+            border:`1px solid ${f.nRefeicoes===n?C.accent:C.border}`,color:f.nRefeicoes===n?C.accent:C.muted,
+          }}>{n}x</button>)}
+        </div>
+      </div>
+
+      {/* Dia de pesagem */}
+      <div style={{marginBottom:4}}>
+        <div style={{fontSize:11,color:C.muted,marginBottom:8}}>Dia da pesagem semanal</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {["Segunda","Terça","Quarta","Quinta","Sexta","Sábado","Domingo"].map(d=>(
+            <button key={d} onClick={()=>u("diaPesagem",d)} style={{
+              padding:"7px 12px",borderRadius:10,fontSize:12,cursor:"pointer",fontFamily:"inherit",
+              background:f.diaPesagem===d?"rgba(16,185,129,0.15)":"rgba(255,255,255,0.04)",
+              border:`1px solid ${f.diaPesagem===d?C.accent:C.border}`,color:f.diaPesagem===d?C.accent:C.muted,
+              transition:"all 0.15s",
+            }}>{d}</button>
+          ))}
+        </div>
+        <div style={{fontSize:11,color:C.muted,marginTop:10,lineHeight:1.6}}>
+          📅 Toda <strong style={{color:C.text}}>{f.diaPesagem}</strong> o app vai te lembrar de registrar seu peso em jejum, sempre no mesmo horário.
+        </div>
+      </div>
+    </div>,
+
+    // 5 — objetivo
+    <StepObjetivo key={5} f={f} u={u} tmb={tmb} get={get} sexo={f.sexo}/>,
   ];
 
   const canNext = [
@@ -466,6 +516,7 @@ function Briefing({ onDone }: any) {
     !!(f.idade && f.peso && f.altura),
     true,
     !!f.dieta,
+    !!(f.nRefeicoes >= 2),
     !!(f.pesoMeta && f.prazo && seg.nivel !== "bloqueado"),
   ][step];
 
@@ -483,7 +534,7 @@ function Briefing({ onDone }: any) {
           const diff2 = parseFloat(f.peso)-parseFloat(f.pesoMeta);
           const deficitIdeal2 = Math.round((diff2*7700)/(parseFloat(String(f.prazo))*7));
           const calAlvoFinal = f.calAlvoCustom !== undefined ? f.calAlvoCustom : get2-deficitIdeal2;
-          onDone({...f,tmb:tmb2,get:get2,calAlvo:calAlvoFinal,deficitIdeal:deficitIdeal2});
+          onDone({...f,tmb:tmb2,get:get2,calAlvo:calAlvoFinal,deficitIdeal:deficitIdeal2,nRefeicoes:f.nRefeicoes,diaPesagem:f.diaPesagem});
         }
       }} style={{...btn(),flex:2,opacity:canNext?1:0.4}}>
         {step < steps.length-1 ? "Continuar →" : "🚀 Começar"}
@@ -686,6 +737,27 @@ function Dashboard({ perfil, onEdit }: any) {
         <span style={{fontSize:10,color:C.muted}}>Treinos:</span>
         {perfil.atividadesFreq.map((a: any)=><div key={a.nome} style={{background:"rgba(16,185,129,0.07)",border:`1px solid rgba(16,185,129,0.15)`,borderRadius:16,padding:"3px 10px",fontSize:11,color:C.accent}}>{a.icon||"🏅"} {a.nome}</div>)}
       </div>}
+
+      {/* Banner de pesagem semanal */}
+      {(()=>{
+        const dias = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
+        const hoje = dias[new Date().getDay()];
+        const diaPesagem = perfil.diaPesagem || "Segunda";
+        if (hoje !== diaPesagem) return null;
+        return <div style={{
+          marginTop:10, background:"rgba(251,191,36,0.08)", border:`1px solid rgba(251,191,36,0.25)`,
+          borderRadius:10, padding:"10px 14px", display:"flex", alignItems:"center", gap:10,
+        }}>
+          <span style={{fontSize:18}}>⚖️</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:12,fontWeight:600,color:C.yellow}}>Hoje é seu dia de pesagem!</div>
+            <div style={{fontSize:11,color:C.muted,marginTop:2}}>Pese-se em jejum, sempre no mesmo horário.</div>
+          </div>
+          <button onClick={()=>setEditPeso(true)} style={{...btn(),padding:"6px 12px",fontSize:11,flexShrink:0}}>
+            Registrar
+          </button>
+        </div>;
+      })()}
 
       <div style={{display:"flex",gap:0,marginTop:12}}>
         {[["hoje","🗓 Hoje"],["cal","⚡ Calorias"],["hist","📈 Histórico"]].map(([id,lb])=>(
